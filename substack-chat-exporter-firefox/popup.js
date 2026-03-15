@@ -1,0 +1,57 @@
+const statusEl = document.getElementById("status");
+
+function setStatus(text, className) {
+  statusEl.textContent = text;
+  statusEl.className = className || "";
+}
+
+// Listen for messages from background
+browser.runtime.onMessage.addListener((message) => {
+  if (message.action === "progress") {
+    setStatus(
+      `Exporting... page ${message.page}, ${message.totalReplies} replies`,
+      "progress"
+    );
+  } else if (message.action === "download") {
+    // Handle download in popup context where Blob URLs work
+    const blob = new Blob([message.markdown], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = message.filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setStatus(
+      `Exported ${message.replyCount} replies to ${message.filename}`,
+      "success"
+    );
+  } else if (message.action === "error") {
+    setStatus(message.message, "error");
+  }
+});
+
+// On popup open, check URL and start export
+(async () => {
+  try {
+    const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+    const tab = tabs[0];
+    if (!tab || !tab.url) {
+      setStatus("Cannot access current tab.", "error");
+      return;
+    }
+
+    const match = tab.url.match(/\/chat\/\d+\/post\/([0-9a-f-]{36})/i);
+    if (!match) {
+      setStatus("Navigate to a Substack chat thread first.", "error");
+      return;
+    }
+
+    const postId = match[1];
+    setStatus("Starting export...", "progress");
+    browser.runtime.sendMessage({ action: "export", postId });
+  } catch {
+    setStatus("Cannot access current tab.", "error");
+  }
+})();
