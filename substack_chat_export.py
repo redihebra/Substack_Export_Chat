@@ -21,6 +21,7 @@ OUTPUT_FILE = "chat_export.md"
 # Don't edit below here
 # ============================================================
 
+import argparse
 import json
 import sys
 import time
@@ -232,12 +233,22 @@ def render_md(node, depth=0):
 
 
 def main():
-    if COOKIE == "PASTE_YOUR_COOKIE_HERE":
-        print("ERROR: You need to paste your substack.sid cookie value at the top of this file!")
-        print("Open this .py file in Notepad, replace PASTE_YOUR_COOKIE_HERE with your actual cookie.")
+    parser = argparse.ArgumentParser(description="Export Substack chat thread to markdown")
+    parser.add_argument("--cookie", help="substack.sid cookie value")
+    parser.add_argument("--post-id", help="Chat post UUID")
+    parser.add_argument("--output", "-o", help="Output filename")
+    args = parser.parse_args()
+
+    cookie = args.cookie or COOKIE
+    post_id = getattr(args, "post_id") or POST_ID
+    output_file = args.output or OUTPUT_FILE
+
+    if cookie == "PASTE_YOUR_COOKIE_HERE":
+        print("ERROR: You need to provide your substack.sid cookie value!")
+        print("Either pass --cookie on the command line or edit the value at the top of this file.")
         sys.exit(1)
 
-    post_info, replies = fetch_all_comments(POST_ID, COOKIE)
+    post_info, replies = fetch_all_comments(post_id, cookie)
 
     lines = []
 
@@ -268,10 +279,10 @@ def main():
 
     markdown = "\n".join(lines)
 
-    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+    with open(output_file, "w", encoding="utf-8") as f:
         f.write(markdown)
 
-    print(f"\nExported to {OUTPUT_FILE}")
+    print(f"\nExported to {output_file}")
 
 
 if __name__ == "__main__":
