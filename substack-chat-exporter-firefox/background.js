@@ -95,16 +95,14 @@ async function fetchAllComments(postId, cookie, onProgress) {
   const allReplies = [];
   let postInfo = null;
 
+  // ---- Phase 1: top-level pagination ----
   let data = await fetchComments(postId, cookie);
-
-  if (data.post) {
-    postInfo = data.post;
-  }
+  if (data.post) postInfo = data.post;
 
   let replies = data.replies || [];
   allReplies.push(...replies);
   let page = 1;
-  onProgress(page, allReplies.length);
+  onProgress({ phase: "top", page, totalReplies: allReplies.length });
 
   while (data.moreAfter || data.more) {
     if (!replies.length) break;
@@ -113,63 +111,80 @@ async function fetchAllComments(postId, cookie, onProgress) {
     await new Promise((r) => setTimeout(r, 500));
     data = await fetchComments(postId, cookie, lastTs);
     replies = data.replies || [];
-
     if (!replies.length) break;
 
     allReplies.push(...replies);
     page++;
-    onProgress(page, allReplies.length);
+    onProgress({ phase: "top", page, totalReplies: allReplies.length });
   }
 
-  // Fetch nested replies (replies to replies) via BFS
+  // ---- Phase 2: BFS for nested replies ----
   const queue = [];
   const seen = new Set();
-
   for (const r of allReplies) {
-    const c = r.comment;
-    if ((c.reply_count || 0) > 0) {
-      queue.push(c.id);
-    }
+    if ((r.comment.reply_count || 0) > 0) queue.push(r.comment.id);
   }
+  const totalParents = queue.length;
+  let processed = 0;
+  onProgress({
+    phase: "nested",
+    page: 0,
+    totalReplies: allReplies.length,
+    processed,
+    totalParents,
+  });
 
   while (queue.length > 0) {
     const commentId = queue.shift();
     if (seen.has(commentId)) continue;
     seen.add(commentId);
+    processed++;
 
     await new Promise((r) => setTimeout(r, 500));
     const children = await fetchChildComments(commentId, cookie);
     if (children.length > 0) {
       allReplies.push(...children);
-      // Check if any children also have children
       for (const r of children) {
-        const c = r.comment;
-        if ((c.reply_count || 0) > 0 && !seen.has(c.id)) {
-          queue.push(c.id);
+        if ((r.comment.reply_count || 0) > 0 && !seen.has(r.comment.id)) {
+          queue.push(r.comment.id);
         }
       }
     }
+    onProgress({
+      phase: "nested",
+      page: 0,
+      totalReplies: allReplies.length,
+      processed,
+      totalParents,
+    });
   }
 
   return { postInfo, allReplies };
 }
 
 function buildTree(replies) {
+  // Substack pagination can return the same comment twice at page boundaries.
+  const seenIds = new Set();
+  const deduped = [];
+  for (const r of replies) {
+    if (!seenIds.has(r.comment.id)) {
+      seenIds.add(r.comment.id);
+      deduped.push(r);
+    }
+  }
+
   const byId = new Map();
   const roots = [];
 
-  for (const r of replies) {
-    const c = r.comment;
-    byId.set(c.id, { comment: c, user: r.user || {}, children: [] });
+  for (const r of deduped) {
+    byId.set(r.comment.id, { comment: r.comment, user: r.user || {}, children: [] });
   }
-
-  for (const r of replies) {
-    const c = r.comment;
-    const parentId = c.parent_id;
+  for (const r of deduped) {
+    const parentId = r.comment.parent_id;
     if (parentId && byId.has(parentId)) {
-      byId.get(parentId).children.push(byId.get(c.id));
+      byId.get(parentId).children.push(byId.get(r.comment.id));
     } else {
-      roots.push(byId.get(c.id));
+      roots.push(byId.get(r.comment.id));
     }
   }
 
@@ -281,8 +296,10 @@ function getFilename(postInfo) {
 }
 
 function safeSendMessage(msg) {
+  // browser.runtime.sendMessage rejects when no listener (closed popup).
   try {
-    browser.runtime.sendMessage(msg);
+    const p = browser.runtime.sendMessage(msg);
+    if (p && typeof p.catch === "function") p.catch(() => {});
   } catch {
     // Popup may have been closed; ignore
   }
@@ -316,11 +333,14 @@ async function handleExport(postId) {
     const { postInfo, allReplies } = await fetchAllComments(
       postId,
       cookieValue,
-      (page, total) => {
+      (info) => {
         safeSendMessage({
           action: "progress",
-          page,
-          totalReplies: total,
+          page: info.page,
+          totalReplies: info.totalReplies,
+          phase: info.phase,
+          processed: info.processed,
+          totalParents: info.totalParents,
         });
       }
     );

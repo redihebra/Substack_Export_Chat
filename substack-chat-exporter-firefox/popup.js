@@ -8,10 +8,17 @@ function setStatus(text, className) {
 // Listen for messages from background
 browser.runtime.onMessage.addListener((message) => {
   if (message.action === "progress") {
-    setStatus(
-      `Exporting... page ${message.page}, ${message.totalReplies} replies`,
-      "progress"
-    );
+    if (message.phase === "nested") {
+      setStatus(
+        `Fetching nested replies… ${message.processed}/${message.totalParents} threads (${message.totalReplies} total)`,
+        "progress"
+      );
+    } else {
+      setStatus(
+        `Fetching root comments… page ${message.page}, ${message.totalReplies} replies`,
+        "progress"
+      );
+    }
   } else if (message.action === "download") {
     // Handle download in popup context where Blob URLs work
     const blob = new Blob([message.markdown], { type: "text/markdown;charset=utf-8" });

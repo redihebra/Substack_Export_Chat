@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Substack Chat Exporter",
-  "version": "1.1",
+  "version": "1.2",
   "description": "Export Substack chat threads to markdown",
   "browser_specific_settings": {
     "gecko": {
