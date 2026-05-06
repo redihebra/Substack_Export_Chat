@@ -1,0 +1,12 @@
+# Local Claude Code session state
+.claude/
+
+# Firefox extension build artifacts
+substack-chat-exporter-firefox/web-ext-artifacts/
+
+# AMO upload state (tied to specific build hashes)
+substack-chat-exporter-firefox/.amo-upload-uuid
+substack-chat-exporter-firefox/amo-metadata.json
+
+# Built/signed extension packages at repo root
+*.xpi
